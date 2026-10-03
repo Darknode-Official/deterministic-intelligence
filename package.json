@@ -1,0 +1,48 @@
+{
+  "name": "deterministic-intelligence",
+  "version": "1.0.0",
+  "description": "Deterministic Intelligence (DI) - a from-scratch, offline, no-AI reasoning engine. Rule-based and verify-first: typo correction, rephrasing, arithmetic, units, dates, a curated knowledge base, and code generation. No model weights, no network, no API keys.",
+  "type": "module",
+  "main": "src/engine.js",
+  "exports": {
+    ".": "./src/engine.js",
+    "./*": "./src/*"
+  },
+  "bin": {
+    "di": "bin/di.mjs"
+  },
+  "files": [
+    "src",
+    "bin",
+    "tools"
+  ],
+  "scripts": {
+    "test": "node test/run.mjs",
+    "di": "node bin/di.mjs"
+  },
+  "keywords": [
+    "deterministic",
+    "offline",
+    "nlp",
+    "rule-based",
+    "no-ai",
+    "calculator",
+    "knowledge-base",
+    "code-generation",
+    "typo-correction",
+    "reasoning-engine"
+  ],
+  "author": "Darknode-Official",
+  "license": "SEE LICENSE IN LICENSE",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Darknode-Official/deterministic-intelligence.git"
+  },
+  "homepage": "https://github.com/Darknode-Official/deterministic-intelligence#readme",
+  "bugs": {
+    "url": "https://github.com/Darknode-Official/deterministic-intelligence/issues"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
