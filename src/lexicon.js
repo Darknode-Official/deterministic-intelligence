@@ -35,13 +35,27 @@ export function setLexicon(text) {
   return n;
 }
 
-// fetch once; resolves true when the list is ready, false if it could not be loaded
+// load once; resolves true when the list is ready, false if it could not be loaded.
+// In the browser this fetches lexicon.txt (cached by the service worker). Under
+// Node (CLI, tests, build tools) fetch of a relative path has no base and the
+// WordNet list sits next to this module on disk, so read it straight from disk —
+// otherwise DI answered "dictionary still downloading" forever off the browser.
 export function loadLexicon(url = "./lexicon.txt?v=" + LEX_VERSION) {
   if (L) return Promise.resolve(true);
-  if (!loading) loading = fetch(url).then((r) => (r.ok ? r.text() : Promise.reject(new Error("HTTP " + r.status))))
-    .then((t) => { setLexicon(t); return true; })
-    .catch(() => { loading = null; return false; });
+  const isNode = typeof window === "undefined" && typeof process !== "undefined" && !!(process.versions && process.versions.node);
+  if (!loading) {
+    loading = (isNode ? loadFromDisk() : fetch(url).then((r) => (r.ok ? r.text() : Promise.reject(new Error("HTTP " + r.status)))))
+      .then((t) => { if (t != null) setLexicon(t); return !!L; })
+      .catch(() => { loading = null; return false; });
+  }
   return loading;
+}
+
+// Node only: read the bundled lexicon.txt that ships beside this module.
+async function loadFromDisk() {
+  const { readFile } = await import("node:fs/promises");
+  const { fileURLToPath } = await import("node:url");
+  return readFile(fileURLToPath(new URL("./lexicon.txt", import.meta.url)), "utf8");
 }
 
 // ---------------------------------------------------------------- word forms
@@ -222,7 +236,7 @@ export function isKindOf(a, b) {
 }
 
 // the verbs DI can act on; a word that means one of these can stand in for it
-const COMMANDS = ["calculate", "compute", "convert", "reverse", "sort", "count", "total", "sum", "add", "subtract", "multiply", "divide", "average",
+export const COMMANDS = ["calculate", "compute", "convert", "reverse", "sort", "count", "total", "sum", "add", "subtract", "multiply", "divide", "average",
   "solve", "define", "factorize", "round", "encode", "decode", "translate", "uppercase", "lowercase", "capitalize", "generate", "write", "list", "simplify"];
 const COMMAND_SET = new Set(COMMANDS);
 // "tally 3, 4 and 5" -> "total 3, 4 and 5"; only a word DI does not already act on is swapped, and only for a command verb

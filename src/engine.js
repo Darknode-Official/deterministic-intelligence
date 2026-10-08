@@ -23,6 +23,7 @@ import * as EV from "./everyday.js";
 import * as HT from "./howto.js";
 import * as K from "./know.js";
 import * as KB from "./kb.js";
+import { conceptCommand } from "./concept-lookup.js";
 
 // --- typo tolerance: nudge a near-miss command word to its canonical spelling ---
 // This runs ONLY over the text used for routing, never over the payload a skill
@@ -1131,9 +1132,12 @@ function sayDictionary(res) {
 
 // the first word of a request, when it is a verb DI does not act on but means one it does
 function commandSwap(raw) {
-  const m = String(raw || "").match(/^(\s*(?:please\s+|pls\s+|kindly\s+|(?:can|could|would|will) you\s+(?:please\s+)?)?)([A-Za-z]+)((?:\s+(?:up|out|together|over))?)(\s+.+)$/i);
+  const m = String(raw || "").match(/^(\s*(?:please\s+|pls\s+|kindly\s+|(?:can|could|would|will) you\s+(?:please\s+)?)?)([A-Za-z]+)((?:\s+(?:up|out|together|over|off|away|down))?)(\s+.+)$/i);
   if (!m) return null;
-  const to = LX.commandSynonym(m[2]);
+  // Live WordNet traversal first (needs the loaded lexicon); fall back to the
+  // frozen concept index — the verb+particle phrase ("add up"), then the bare
+  // verb — so loose phrasing still routes offline and in the CLI/tests.
+  const to = LX.commandSynonym(m[2]) || conceptCommand((m[2] + m[3]).trim()) || conceptCommand(m[2]);
   // math verbs need numbers to work on; text verbs need something to transform
   if (to && !/\d/.test(m[4]) && !/^(?:reverse|uppercase|lowercase|capitalize|sort|define|encode|decode)$/.test(to)) return null;
   return to ? { from: m[2] + m[3], to, text: m[1] + to + m[4] } : null;
@@ -1348,15 +1352,23 @@ export function respond(input, model) {
     const f1 = fixTypos(sa.text, model), f2 = fixTypos(sc.text, model);
     fx = { text: rephrase(f1.text), fixes: [...sa.fixes, ...f1.fixes], hybrid: rephrase(f2.hybrid), hybridFixes: [...sc.fixes, ...f2.hybridFixes], plain: f1.text, plainHybrid: f2.hybrid };
   }
-  // "tally up 3, 4 and 5": a verb DI does not act on, but the dictionary says means one it does
+  // "tally up 3, 4 and 5": a verb DI does not act on, but means one it does. The
+  // live lexicon resolves it when loaded; the frozen concept index resolves it
+  // offline (CLI/Node), so this no longer waits on lexReady().
   let swapped = null;
-  if (!spec && LX.lexReady() && !score(fx.text).length) {
+  const pre = score(fx.text);
+  // Fire when nothing matched, or when the only match is wordmath — the engine's
+  // own acknowledged guess. An explicit leading verb ("knock off 5", "tally") is
+  // a firmer signal, so we rewrite it and adopt the result ONLY if it then lands
+  // on a definite skill (never trading one wordmath guess for another).
+  if (!spec && (!pre.length || pre[0].skill === "wordmath")) {
     const sw = commandSwap(raw);
     if (sw) {
       const sa = slang(sw.text, true), sc = slang(sw.text, false);
       const f1 = fixTypos(sa.text, model), f2 = fixTypos(sc.text, model);
       const alt = { text: rephrase(f1.text), fixes: [...sa.fixes, ...f1.fixes], hybrid: rephrase(f2.hybrid), hybridFixes: [...sc.fixes, ...f2.hybridFixes], plain: f1.text, plainHybrid: f2.hybrid };
-      if (score(alt.text).length) { fx = alt; swapped = sw; }
+      const altScore = score(alt.text);
+      if (altScore.length && altScore[0].skill !== "wordmath") { fx = alt; swapped = sw; }
     }
   }
   const s = fx.text;
