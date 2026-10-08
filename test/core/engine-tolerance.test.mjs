@@ -59,3 +59,17 @@ group("tolerance: fraction comparison phrasing", () => {
     assert.equal(route("is 3/4 greater than 2/3").skill, "compare");
   });
 });
+
+group("tolerance: 'make each word start uppercase' is title case, not codegen", () => {
+  const out = (r) => (typeof r.result === "string" ? r.result : r.result && (r.result.out || r.result.text));
+  test("routes to the text tool and title-cases the payload", () => {
+    const r = route("make each word start uppercase: hello world");
+    assert.equal(r.skill, "text");
+    assert.equal(out(r), "Hello World");
+  });
+  test("'make every word begin with a capital' also title-cases", () => {
+    const r = route("make every word begin with a capital: the quick fox");
+    assert.equal(r.skill, "text");
+    assert.equal(out(r), "The Quick Fox");
+  });
+});

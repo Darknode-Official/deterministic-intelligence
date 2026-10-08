@@ -866,6 +866,9 @@ const FRACTION_DEN = { third: 3, quarter: 4, fourth: 4, fifth: 5, sixth: 6, seve
 const ORDINAL_COUNT = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9 };
 const REPHRASE = [
   [/^(?:what's|whats)\s+(?=[-\d$(.]|(?:a|an|one|half|twice|double|triple)\s)/i, "what is "],
+  // "make each word start uppercase: foo" reads as a codegen plan ("start ...");
+  // it is the text tool's title case. Canonicalize, keeping the payload.
+  [/^(?:make|have|set|put) (?:each|every) word (?:to )?(?:start|begin|starting|beginning)(?:ing)? (?:with )?(?:an? )?(?:upper\s?case|capital)(?:\s+letter)?\s*(?:[:,-]\s*|\s+(?:in|for|of)\s+)?/i, "title case "],
   // "what is the md5 of password" is a hash request, not a definition
   [/^(?:what(?:'s| is)|whats|give me|compute|calculate)\s+(?:the\s+)?(md5|sha-?1|sha-?256|sha-?512|crc32|base64|hex|rot13|morse|fnv1a?|djb2)\s+(?:hash\s+|checksum\s+|encoding\s+|digest\s+)?(?:of|for)\s+(.+)$/i, (m, alg, rest) => alg.toLowerCase().replace(/^sha-/, "sha") + " of " + rest],
   [new RegExp("^(?:how much is |how many is |what is |how many are )?(" + NUM + "|a|one|half a) dozen\\s*\\??$", "i"), (m, k) => (/^half/i.test(k) ? "0.5" : /^(?:a|one)$/i.test(k) ? "1" : k) + " * 12"],
