@@ -25,6 +25,7 @@ import * as K from "./know.js";
 import * as KB from "./kb.js";
 import { conceptCommand } from "./concept-lookup.js";
 import { synthGame } from "./gamegen.js";
+import * as SA from "./secanalyze.js";
 
 // --- typo tolerance: nudge a near-miss command word to its canonical spelling ---
 // This runs ONLY over the text used for routing, never over the payload a skill
@@ -68,7 +69,7 @@ function score(input) {
   // This is used only to DETECT intent; skills receive the original input.
   const low = normalizeTypos(synonyms(numberWords(naturalize(s))));
   const has = (re) => re.test(low);
-  const S0 = { calc: 0, convert: 0, codegen: 0, text: 0, regex: 0, datetime: 0, predict: 0, stats: 0, algebra: 0, numbertheory: 0, encode: 0, knowledge: 0, facts: 0, data: 0, base: 0, color: 0, jsonquery: 0, wordmath: 0, sequence: 0, logic: 0, setops: 0, matrix: 0, units: 0, combinatorics: 0, listops: 0, spelling: 0, dictionary: 0, inflect: 0, compare: 0, everyday: 0, howto: 0, know: 0 };
+  const S0 = { calc: 0, convert: 0, codegen: 0, text: 0, regex: 0, datetime: 0, predict: 0, stats: 0, algebra: 0, numbertheory: 0, encode: 0, knowledge: 0, facts: 0, data: 0, base: 0, color: 0, jsonquery: 0, wordmath: 0, sequence: 0, logic: 0, setops: 0, matrix: 0, units: 0, combinatorics: 0, listops: 0, spelling: 0, dictionary: 0, inflect: 0, compare: 0, everyday: 0, howto: 0, know: 0, secanalyze: 0 };
   const why = {};
   const add = (k, n, reason) => { S0[k] += n; if (reason && (!why[k] || n > 0)) why[k] = reason; };
   // a code request needs a real code verb or an explicit "in <language>" — NOT the
@@ -144,6 +145,20 @@ function score(input) {
   if (!codeAsk && has(/\bdivisors?\s+of\s+\d|\bis\s+\d+\s+(?:a\s+)?perfect\s+(?:square|cube)\b|\bis\s+\d+\s+(?:evenly\s+)?divisible\s+by\s+\d|\bsum of (?:the |its )?digits (?:of|in)\s+\d|\bdigit sum\b|\bhow many digits (?:does|do|are (?:there )?in|in|are in)\s+\d+\b(?!\s*[\^*!])|factori[sz]e|prime factor|\bfactors?\s+of\b|\bfactor\s+\d|\bgcd\b|\blcm\b|greatest common|least common|is\s+\d+\s+prime|\b(?:is|check (?:if|whether))\s+-?\d+\s+(?:an?\s+)?(?:even|odd)\b|\d+(?:st|nd|rd|th)\s+(?:prime|fib)|nth\s+(?:prime|fib)|\bfirst\s+\d+\s+primes?\b|\b(?:first|list(?: the)?(?: first)?)\s+\d+\s+fib|\bprimes?\s+(?:below|under|less than|up to)\s+\d|is\s+-\d+\s+prime|\bfib(?:onacci)?\s+(?:of\s+|number\s+)?-?\d/)) add("numbertheory", 7, "number theory");
   // encoding / hashing
   if (!isDef && has(/base64|\bhex\b|rot13|morse|url ?(en|de)code|to binary|from binary|crc32|fnv1a?|djb2|\bhash\b|\bmd5\b|\bsha-?(?:1|256)?\b/)) add("encode", 7, "encode / hash");
+  // security analysis (JWT decode, hash ID, base32/58, encoding detect, IOC extraction, MAC)
+  // — these carry stronger, more specific signals than the generic encode rule above.
+  const hashToken = /\$[0-9a-z$][^\s]{6,}|\b[0-9a-f]{8,128}\b/i.test(s);
+  if (SA.looksLikeJwt(s)) add("secanalyze", 12, "a JWT to decode");
+  else if (has(/\bjwt\b|json web token/) && has(/decode|parse|read|inspect|expand|decrypt|what.*(?:in|say)/)) add("secanalyze", 9, "a JWT request");
+  if (hashToken && (has(/\bidentif\w*\b[^]*\bhash\b|\bhash\b[^]*\bidentif/) || has(/\bwhat\s*(?:kind|type|sort)?(?:\s+of)?\s*hash\b/) || has(/\bwhich hash\b|\bhash type\b|\btype of hash\b/) || /^hashid\b/.test(low))) add("secanalyze", 11, "identify a hash");
+  {
+    const numericBase = has(/\b(?:to|in|into|as)\s+base\s*(?:32|58)\b/) && !has(/encode|decode|["':]/);
+    if (has(/\bbase\s*58\b/) && !numericBase) add("secanalyze", 9, "base58");
+    if (has(/\bbase\s*32\b/) && !numericBase) add("secanalyze", 9, "base32");
+  }
+  if (has(/(?:what|which|identify|detect|guess)\b[^]*\bencod/) || has(/\bencoding of\b|what is this encoded/)) add("secanalyze", 9, "detect an encoding");
+  if (has(/\biocs?\b|indicators? of compromise|extract (?:all\s+)?(?:the\s+)?(?:indicators?|iocs?)\b|pull (?:out )?(?:indicators?|iocs?)/)) add("secanalyze", 9, "extract IOCs");
+  if (has(/\bmac address\b|\bparse mac\b|\bnormali[sz]e mac\b/)) add("secanalyze", 7, "a MAC address");
   // knowledge base (a definition question that is not math, code, or number theory)
   if (isDef && !codeAsk && !hasMathPhrase(low) && !has(/[-+*/^]/) && !has(/\d[a-z]/) && !has(/\b(sqrt|cbrt|max|min|round|abs|log|ln|sin|cos|tan)\s*\(/)) add("knowledge", 7, "a definition from the glossary");
   // the English dictionary (WordNet): meanings, synonyms, opposites, "is a dog an animal"
@@ -387,6 +402,28 @@ function say(skill, res, input, model) {
       const conf = model ? predConf(model, input) : 0;
       return { title: "Prediction", body: cont ? "Most likely continuation (statistical n-gram, confidence " + Math.round(conf * 100) + "%):" : "I need a few words to predict from.", pre: cont || null, note: "This is frequency-based next-word prediction from the bundled corpus, not comprehension.", result: { continuation: cont, confidence: conf } };
     }
+    case "secanalyze": {
+      if (!res || res.ok === false) return { title: "Security analysis", body: "I could not run that: " + ((res && res.error) || "unrecognized request") + ".", result: res };
+      if (res.kind === "jwt") {
+        const pj = (o) => JSON.stringify(o, null, 2);
+        const cl = res.claims.length ? "\n\nCLAIMS\n" + res.claims.map(([k, v]) => "  " + k + ": " + v).join("\n") : "";
+        return { title: "JWT decoded", body: "Algorithm **" + res.alg + "**, type **" + res.typ + "**" + (res.hasSig ? "" : " (no signature part)") + ". I base64url-decoded the header and payload — no key needed.", pre: "HEADER\n" + pj(res.header) + "\n\nPAYLOAD\n" + pj(res.payload) + cl, note: res.warnings.join(" "), result: res };
+      }
+      if (res.kind === "hashid") {
+        const lines = res.candidates.map((c) => "  " + c.algo.padEnd(26) + Math.round(c.confidence * 100) + "%");
+        return { title: "Hash identification", body: "Most likely algorithm for that " + res.input.length + "-character value:", pre: lines.join("\n"), note: "Fixed-length digests are ambiguous, so these are ranked by how common each is at this length. This reads length/format only; it does not reverse the hash.", result: res };
+      }
+      if (res.kind === "encode") return { title: "Encoding", body: "**" + res.op + "**:", pre: String(res.value), note: "Input: " + JSON.stringify(res.payload), result: res };
+      if (res.kind === "encdetect") return { title: "Encoding detection", body: "Likely encodings, most probable first:", pre: res.guesses.map((g) => "  " + g.enc.padEnd(26) + Math.round(g.confidence * 100) + "%").join("\n"), note: "Formats overlap (hex is also valid base64, etc.), so these are ranked guesses, not certainties.", result: res };
+      if (res.kind === "ioc") {
+        const order = ["ipv4", "ipv6", "domains", "urls", "emails", "md5", "sha1", "sha256", "cve"];
+        const labels = { ipv4: "IPv4", ipv6: "IPv6", domains: "Domains", urls: "URLs", emails: "Emails", md5: "MD5", sha1: "SHA-1", sha256: "SHA-256", cve: "CVEs" };
+        const blocks = order.filter((k) => res.groups[k] && res.groups[k].length).map((k) => labels[k] + " (" + res.groups[k].length + "):\n" + res.groups[k].map((v) => "  " + (res.defanged ? SA.defang(v) : v)).join("\n"));
+        return { title: "IOC extraction", body: "Found **" + res.total + "** indicator" + (res.total === 1 ? "" : "s") + (res.defanged ? " (defanged)" : "") + ":", pre: blocks.join("\n\n"), note: "De-duplicated by type. Add the word “defang” to neutralize them for safe sharing.", result: res };
+      }
+      if (res.kind === "mac") return { title: "MAC address", body: "Normalized, with what the address itself tells you:", pre: "colon   " + res.colon + "\nhyphen  " + res.hyphen + "\ncisco   " + res.cisco + "\nOUI     " + res.oui + "\nadmin   " + (res.local ? "locally administered (not a real vendor OUI)" : "globally unique (vendor-assigned OUI)") + "\ncast    " + (res.multicast ? "multicast" : "unicast"), result: res };
+      return { title: "Security analysis", body: "Done.", result: res };
+    }
     default: return { title: "Engine", body: "I am not sure what to do with that.", result: null };
   }
 }
@@ -480,6 +517,7 @@ function run(skill, input, model) {
     case "facts": return F.facts(input);
     case "listops": return listOps(input);
     case "spelling": return spelling(input, model);
+    case "secanalyze": return SA.analyze(input);
     case "encode": {
       const eops = [["unbase64", /(?:decode\s+(?:this\s+)?(?:from\s+)?base64|from\s+base64|unbase64|base64\s+decode)/], ["base64", /base64/], ["unhex", /(?:from\s+hex|decode\s+hex|unhex)/], ["hex", /hex/], ["unurl", /url\s*decode|decode\s+url|unurl/], ["url", /url/], ["rot13", /rot13/], ["unbinary", /from\s+binary|decode\s+binary/], ["binary", /binary/], ["morse", /morse/], ["crc32", /crc32/], ["fnv1a", /fnv1a?/], ["djb2", /djb2/]];
       let eop = "base64"; for (const [name, re] of eops) if (re.test(low)) { eop = name; break; }
@@ -1423,7 +1461,7 @@ export function respond(input, model) {
   // skills that transform the user's own content get it verbatim (only command
   // words corrected); CSV data is never touched; everything else reads the fixed text.
   const VERBATIM = new Set(["listops", "text", "encode", "regex", "jsonquery", "setops", "matrix", "logic", "color"]);
-  const useRaw = top.skill === "data" || top.skill === "spelling"; // a spelling question is about the user's exact letters
+  const useRaw = top.skill === "data" || top.skill === "spelling" || top.skill === "secanalyze"; // these read the user's exact bytes (a token, a hash, a log) — never typo-"corrected"
   const inputFor = useRaw ? raw : VERBATIM.has(top.skill) ? fx.hybrid : s;
   const applied = useRaw ? [] : VERBATIM.has(top.skill) ? fx.hybridFixes : fx.fixes;
   const res = run(top.skill, inputFor, model);
