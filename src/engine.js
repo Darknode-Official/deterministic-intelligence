@@ -24,6 +24,7 @@ import * as HT from "./howto.js";
 import * as K from "./know.js";
 import * as KB from "./kb.js";
 import { conceptCommand } from "./concept-lookup.js";
+import { synthGame } from "./gamegen.js";
 
 // --- typo tolerance: nudge a near-miss command word to its canonical spelling ---
 // This runs ONLY over the text used for routing, never over the payload a skill
@@ -1375,6 +1376,15 @@ export function respond(input, model) {
   const ranked = score(s);
   if (!ranked.length) {
     const low = s.toLowerCase();
+    // 0) A game: synthesized from parts (gamegen.js), not stored. Composed from
+    // the request — genre, theme, difficulty, palette — so it is a real program
+    // DI builds, exactly what the "only programs it has rules for" line means.
+    const game = (BUILD_VERB.test(low) || /\bplay\b/.test(low)) ? synthGame(low) : null;
+    if (game) return {
+      skill: "codegen", confidence: 1, alternatives: [],
+      title: game.title + " · HTML", body: game.lead, code: game.code, lang: "html", note: game.note,
+      result: { kind: "generated", op: game.title, lang: "html", langs: ["html"], code: game.code },
+    };
     // 1) A recognized-but-out-of-scope build request (a whole app/game/etc).
     const thing = classifyBuild(low);
     if (thing) {
