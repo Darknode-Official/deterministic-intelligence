@@ -1116,7 +1116,9 @@ const DICT_FORMS = [
   ["ant", new RegExp("^(?:what(?:'s| is| are)? )?(?:the |an? )?(?:antonyms?|opposites?) (?:of |for |to )?(?:the word )?\"?" + W + "\"?\\s*\\??$", "i")],
   ["def", new RegExp("^(?:what does|what do|whats|what's) (?:the word |the term )?\"?" + W + "\"? (?:mean|means|stand for)\\s*\\??$", "i")],
   ["def", new RegExp("^(?:what(?:'s| is) )?(?:the )?(?:meaning|definition|meanings|definitions) of (?:the word |the term )?\"?" + W + "\"?\\s*\\??$", "i")],
-  ["def", new RegExp("^(?:define|definition|dictionary|look up|lookup) (?:the word |the term )?\"?" + W + "\"?\\s*\\??$", "i")],
+  ["def", new RegExp("^(?:define|definition|dictionary|look up|lookup) (?:the word |the term )?\"?" + W + "\"?(?:\\s+for me)?\\s*\\??$", "i")],
+  // "tell me what a platypus is", "what a widget is" — the subject sits before a trailing "is/means"
+  ["def", new RegExp("^(?:tell me |i want to know |do you know |can you tell me )?what(?:'s| is)? (?:an? |the )?\"?" + W + "\"? (?:is|are|means?|stands? for)\\s*\\??$", "i")],
   ["def", new RegExp("^(?:what is|what's|whats) (?:an? )?\"?" + W + "\"?\\s*\\??$", "i")], // only reached through the glossary fallback
 ];
 function dictionaryAsk(s) {
@@ -1219,8 +1221,10 @@ const CMP_RE = new RegExp("^(?:which(?:\\s+one)?\\s+is|what(?:'s| is)|is)\\s+(?:
 const CMP_RE2 = new RegExp("^" + NUMRE + "\\s+(?:vs\\.?|versus|or|compared to)\\s+" + NUMRE + "\\s*\\??$", "i");
 const CMP_RE3 = new RegExp("^is\\s+" + NUMRE + "\\s+or\\s+" + NUMRE + "\\s+" + CMP_WORDS + "\\s*\\??$", "i"); // "is 50% or 0.4 bigger"
 const CMP_RE4 = new RegExp("^compare\\s+" + NUMRE + "\\s+(?:and|to|with|vs\\.?|versus|against)\\s+" + NUMRE + "\\s*\\??$", "i"); // "compare 0.3 and 1/3"
+const CMP_RE5 = new RegExp("^(?:is\\s+|are\\s+)?" + NUMRE + "\\s+" + CMP_WORDS + "\\s+than\\s+" + NUMRE + "\\s*\\??$", "i"); // "is 3/4 greater than 2/3" — comparator in the middle
 function compareAsk(s) {
   const t = String(s || "").trim();
+  const m5 = t.match(CMP_RE5); if (m5) return { dir: /small|less|lower|tini/i.test(m5[2]) ? "smaller" : "bigger", a: m5[1], b: m5[3] };
   const m4 = t.match(CMP_RE4); if (m4) return { dir: "bigger", a: m4[1], b: m4[2] };
   const m = t.match(CMP_RE); if (m) return { dir: /small|less|lower|tini/i.test(m[1]) ? "smaller" : "bigger", a: m[2], b: m[3] };
   const m3 = t.match(CMP_RE3); if (m3) return { dir: /small|less|lower|tini/i.test(m3[3]) ? "smaller" : "bigger", a: m3[1], b: m3[2] };
@@ -1325,7 +1329,7 @@ function sayKnow(res) {
   return { title: "Knowledge", body: "I do not have that in my curated knowledge.", result: res };
 }
 const cap1 = (x) => x.charAt(0).toUpperCase() + x.slice(1);
-const SUMMARIZE_ASK = /^\s*(?:please\s+)?(?:summari[sz]e|sum up|tl;?dr|give me (?:a |the )?(?:summary|gist|tl;?dr) of|make (?:this|it) shorter|shorten)(?:\s+(?:this|that|the following|this text|the text|this paragraph|this article|it))?\s*[:\-—]?\s*([\s\S]*)$/i;
+const SUMMARIZE_ASK = /^\s*(?:please\s+)?(?:summari[sz]e|sum up|tl;?dr|give me (?:a |the )?(?:summary|gist|tl;?dr) of|the gist of|make (?:this|it) shorter|shorten|condense|boil(?:\s+(?:this|that|it|the following|the text))?\s+down)(?:\s+(?:this|that|the following|this text|the text|this paragraph|this article|it))?\s*[:\-—]?\s*([\s\S]*)$/i;
 function summarizeReply(raw) {
   const m = raw.match(SUMMARIZE_ASK);
   if (!m) return null;

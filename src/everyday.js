@@ -325,10 +325,10 @@ export function ask(input) {
   // --- IP addresses and CIDR blocks ---
   m = low.match(/(\b(?:\d{1,3}\.){3}\d{1,3}\b)(?:\/(\d{1,2})\b)?/);
   const cidrOnly = low.match(/(?:^|\s|a )\/(\d{1,2})\b/);
-  if (m && /\b(?:ip|ips|address|addresses|private|public|loopback|localhost|subnet|mask|cidr|network|broadcast|range|hosts?|usable|what is|whats|what kind|what type|is)\b/.test(low) && !/\bport\b|\bping\b|\bcurl\b|\bssh\b|\bhttp/.test(low)) {
-    const oct = m[1].split(".").map(Number); if (oct.every((o) => o <= 255)) return { kind: "ip", ip: m[1], prefix: m[2] != null ? +m[2] : null, wantsRange: /\b(?:subnet|mask|cidr|network|broadcast|range|hosts?|usable|first|last)\b/.test(low) };
+  if (m && /\b(?:ip|ips|address|addresses|private|public|loopback|localhost|subnet|(?:net)?mask|cidr|network|broadcast|range|hosts?|usable|what is|whats|what kind|what type|is)\b/.test(low) && !/\bport\b|\bping\b|\bcurl\b|\bssh\b|\bhttp/.test(low)) {
+    const oct = m[1].split(".").map(Number); if (oct.every((o) => o <= 255)) return { kind: "ip", ip: m[1], prefix: m[2] != null ? +m[2] : null, wantsRange: /\b(?:subnet|(?:net)?mask|cidr|network|broadcast|range|hosts?|usable|first|last)\b/.test(low) };
   }
-  if (cidrOnly && /\b(?:subnet|mask|cidr|hosts?|addresses|ips|usable|network|block|prefix)\b/.test(low) && +cidrOnly[1] <= 32) return { kind: "cidr", prefix: +cidrOnly[1], wantsHosts: /\bhosts?\b|\baddresses\b|\bips\b|\busable\b|\bhow many\b/.test(low) };
+  if (cidrOnly && /\b(?:subnet|(?:net)?mask|cidr|hosts?|addresses|ips|usable|network|block|prefix)\b/.test(low) && +cidrOnly[1] <= 32) return { kind: "cidr", prefix: +cidrOnly[1], wantsHosts: /\bhosts?\b|\baddresses\b|\bips\b|\busable\b|\bhow many\b/.test(low) };
   // --- HTTP status codes ---
   m = low.match(/^(?:what (?:is|does|do) |whats |what's |explain |meaning of |define )?(?:an? |the )?(?:http |https |http\/\d(?:\.\d)? |status |error |response )*(?:status |error |response |code |status code |error code |response code )*(\d{3})(?: (?:status|error|response|code|status code|error code|http|http status))*(?: mean| means| stand for| error| status| code| response)*$/);
   if (m && HTTP_STATUS[+m[1]] !== undefined && /\b(?:http|status|error|response|code|mean)\b/.test(low)) return { kind: "httpstatus", code: +m[1] };
