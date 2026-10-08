@@ -670,7 +670,7 @@ function classifyBuild(low) {
 // A word-level read of an unmatched request: which words the engine actually
 // recognizes (so it can say what it understood rather than only what it did not).
 function recognizedWords(low) {
-  const known = { calc: /\b(add|plus|sum|minus|subtract|multiply|divide|square|sqrt|percent|factorial)\b/, convert: /\b(convert|kilometers?|km|kg|miles?|meters?|celsius|fahrenheit|kilograms?|bytes?|gigabytes?|megabytes?)\b/, text: /\b(reverse|uppercase|lowercase|camelcase|snakecase|kebab|slugify|slug)\b/, code: /\b(function|python|javascript|typescript|rust|golang|recursion)\b/, date: /\b(leap ?year|weekday|calendar|days? between)\b/, regex: /\b(regex|regular expression|pattern)\b/, facts: /\b(capital|element|atomic|periodic|planck|avogadro|speed of light)\b/ };
+  const known = { calc: /\b(add|plus|sum|minus|subtract|multiply|divide|square|sqrt|percent|factorial)\b/, convert: /\b(convert|kilometers?|km|kg|miles?|meters?|celsius|fahrenheit|kilograms?|bytes?|gigabytes?|megabytes?)\b/, text: /\b(reverse|uppercase|lowercase|camelcase|snakecase|kebab|slugify|slug)\b/, code: /\b(function|python|javascript|typescript|rust|golang|recursion)\b/, date: /\b(leap ?year|weekday|calendar|days? between)\b/, regex: /\b(regex|regular expression|pattern)\b/, facts: /\b(capital|element|atomic|periodic|planck|avogadro|speed of light)\b/, security: /\b(jwt|json web token|hash|md5|sha-?\d|bcrypt|base32|base58|defang|ioc|iocs|indicator|mac address)\b/ };
   const hits = [];
   for (const k in known) if (known[k].test(low)) hits.push(k);
   return hits;
@@ -1438,7 +1438,7 @@ export function respond(input, model) {
     }
     // 2) Otherwise: say which words it did recognize, then ask to disambiguate.
     const hits = recognizedWords(low);
-    const nameMap = { calc: "**calculate**", convert: "**convert**", text: "**transform text**", code: "**generate code**", date: "**date math**", regex: "**build a regex**", facts: "**look up a fact**" };
+    const nameMap = { calc: "**calculate**", convert: "**convert**", text: "**transform text**", code: "**generate code**", date: "**date math**", regex: "**build a regex**", facts: "**look up a fact**", security: "**analyze a token/hash/IOC**" };
     const recognized = hits.length ? "I recognized words pointing at: " + hits.map((h) => nameMap[h]).join(", ") + ". Say which one and I will run it exactly.\n\n" : "";
     // Only offer a continuation when the text really reads like an unfinished sentence.
     const words = s.split(/\s+/).length;
