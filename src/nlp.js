@@ -136,10 +136,10 @@ export function mathPhrase(input) {
 // Applied to routing text only, never to a skill's payload.
 // ---------------------------------------------------------------------------
 const SYN = [
-  [/\b(work out|figure out|work through|solve for the value of)\b/g, "calculate"],
-  [/\b(turn|change|switch)\b(?=[^.]*\b(into|to)\b)/g, "convert"],
-  [/\b(spell|write) (it )?backwards\b/g, "reverse"],
-  [/\b(make|create|build|produce) (a |an |some )?(code|program|function|script)\b/g, "generate code"],
+  [/\b(work out|figure out|work through|solve for the value of|compute|evaluate)\b/g, "calculate"],
+  [/\b(turn|change|switch|transform)\b(?=[^.]*\b(into|to)\b)/g, "convert"],
+  [/\b(spell|write|print|type) (it |that )?backwards\b/g, "reverse"],
+  [/\b(make|create|build|produce|write me|generate) (a |an |some )?(code|program|function|script)\b/g, "generate code"],
   [/\bhow do you (say|write)\b/g, "convert"],
   [/\bwhat's\b/g, "what is"],
   [/\bwhats\b/g, "what is"],

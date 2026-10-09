@@ -25,6 +25,7 @@ import * as K from "./know.js";
 import * as KB from "./kb.js";
 import { conceptCommand } from "./concept-lookup.js";
 import { synthGame } from "./gamegen.js";
+import * as SA from "./secanalyze.js";
 
 // --- typo tolerance: nudge a near-miss command word to its canonical spelling ---
 // This runs ONLY over the text used for routing, never over the payload a skill
@@ -68,7 +69,7 @@ function score(input) {
   // This is used only to DETECT intent; skills receive the original input.
   const low = normalizeTypos(synonyms(numberWords(naturalize(s))));
   const has = (re) => re.test(low);
-  const S0 = { calc: 0, convert: 0, codegen: 0, text: 0, regex: 0, datetime: 0, predict: 0, stats: 0, algebra: 0, numbertheory: 0, encode: 0, knowledge: 0, facts: 0, data: 0, base: 0, color: 0, jsonquery: 0, wordmath: 0, sequence: 0, logic: 0, setops: 0, matrix: 0, units: 0, combinatorics: 0, listops: 0, spelling: 0, dictionary: 0, inflect: 0, compare: 0, everyday: 0, howto: 0, know: 0 };
+  const S0 = { calc: 0, convert: 0, codegen: 0, text: 0, regex: 0, datetime: 0, predict: 0, stats: 0, algebra: 0, numbertheory: 0, encode: 0, knowledge: 0, facts: 0, data: 0, base: 0, color: 0, jsonquery: 0, wordmath: 0, sequence: 0, logic: 0, setops: 0, matrix: 0, units: 0, combinatorics: 0, listops: 0, spelling: 0, dictionary: 0, inflect: 0, compare: 0, everyday: 0, howto: 0, know: 0, secanalyze: 0 };
   const why = {};
   const add = (k, n, reason) => { S0[k] += n; if (reason && (!why[k] || n > 0)) why[k] = reason; };
   // a code request needs a real code verb or an explicit "in <language>" — NOT the
@@ -144,6 +145,20 @@ function score(input) {
   if (!codeAsk && has(/\bdivisors?\s+of\s+\d|\bis\s+\d+\s+(?:a\s+)?perfect\s+(?:square|cube)\b|\bis\s+\d+\s+(?:evenly\s+)?divisible\s+by\s+\d|\bsum of (?:the |its )?digits (?:of|in)\s+\d|\bdigit sum\b|\bhow many digits (?:does|do|are (?:there )?in|in|are in)\s+\d+\b(?!\s*[\^*!])|factori[sz]e|prime factor|\bfactors?\s+of\b|\bfactor\s+\d|\bgcd\b|\blcm\b|greatest common|least common|is\s+\d+\s+prime|\b(?:is|check (?:if|whether))\s+-?\d+\s+(?:an?\s+)?(?:even|odd)\b|\d+(?:st|nd|rd|th)\s+(?:prime|fib)|nth\s+(?:prime|fib)|\bfirst\s+\d+\s+primes?\b|\b(?:first|list(?: the)?(?: first)?)\s+\d+\s+fib|\bprimes?\s+(?:below|under|less than|up to)\s+\d|is\s+-\d+\s+prime|\bfib(?:onacci)?\s+(?:of\s+|number\s+)?-?\d/)) add("numbertheory", 7, "number theory");
   // encoding / hashing
   if (!isDef && has(/base64|\bhex\b|rot13|morse|url ?(en|de)code|to binary|from binary|crc32|fnv1a?|djb2|\bhash\b|\bmd5\b|\bsha-?(?:1|256)?\b/)) add("encode", 7, "encode / hash");
+  // security analysis (JWT decode, hash ID, base32/58, encoding detect, IOC extraction, MAC)
+  // — these carry stronger, more specific signals than the generic encode rule above.
+  const hashToken = /\$[0-9a-z$][^\s]{6,}|\b[0-9a-f]{8,128}\b/i.test(s);
+  if (SA.looksLikeJwt(s)) add("secanalyze", 12, "a JWT to decode");
+  else if (has(/\bjwt\b|json web token/) && has(/decode|parse|read|inspect|expand|decrypt|what.*(?:in|say)/)) add("secanalyze", 9, "a JWT request");
+  if (hashToken && (has(/\bidentif\w*\b[^]*\bhash\b|\bhash\b[^]*\bidentif/) || has(/\bwhat\s*(?:kind|type|sort)?(?:\s+of)?\s*hash\b/) || has(/\bwhich hash\b|\bhash type\b|\btype of hash\b/) || /^hashid\b/.test(low))) add("secanalyze", 11, "identify a hash");
+  {
+    const numericBase = has(/\b(?:to|in|into|as)\s+base\s*(?:32|58)\b/) && !has(/encode|decode|["':]/);
+    if (has(/\bbase\s*58\b/) && !numericBase) add("secanalyze", 9, "base58");
+    if (has(/\bbase\s*32\b/) && !numericBase) add("secanalyze", 9, "base32");
+  }
+  if (has(/(?:what|which|identify|detect|guess)\b[^]*\bencod/) || has(/\bencoding of\b|what is this encoded/)) add("secanalyze", 9, "detect an encoding");
+  if (has(/\biocs?\b|indicators? of compromise|extract (?:all\s+)?(?:the\s+)?(?:indicators?|iocs?)\b|pull (?:out )?(?:indicators?|iocs?)/)) add("secanalyze", 9, "extract IOCs");
+  if (has(/\bmac address\b|\bparse mac\b|\bnormali[sz]e mac\b/)) add("secanalyze", 7, "a MAC address");
   // knowledge base (a definition question that is not math, code, or number theory)
   if (isDef && !codeAsk && !hasMathPhrase(low) && !has(/[-+*/^]/) && !has(/\d[a-z]/) && !has(/\b(sqrt|cbrt|max|min|round|abs|log|ln|sin|cos|tan)\s*\(/)) add("knowledge", 7, "a definition from the glossary");
   // the English dictionary (WordNet): meanings, synonyms, opposites, "is a dog an animal"
@@ -387,6 +402,28 @@ function say(skill, res, input, model) {
       const conf = model ? predConf(model, input) : 0;
       return { title: "Prediction", body: cont ? "Most likely continuation (statistical n-gram, confidence " + Math.round(conf * 100) + "%):" : "I need a few words to predict from.", pre: cont || null, note: "This is frequency-based next-word prediction from the bundled corpus, not comprehension.", result: { continuation: cont, confidence: conf } };
     }
+    case "secanalyze": {
+      if (!res || res.ok === false) return { title: "Security analysis", body: "I could not run that: " + ((res && res.error) || "unrecognized request") + ".", result: res };
+      if (res.kind === "jwt") {
+        const pj = (o) => JSON.stringify(o, null, 2);
+        const cl = res.claims.length ? "\n\nCLAIMS\n" + res.claims.map(([k, v]) => "  " + k + ": " + v).join("\n") : "";
+        return { title: "JWT decoded", body: "Algorithm **" + res.alg + "**, type **" + res.typ + "**" + (res.hasSig ? "" : " (no signature part)") + ". I base64url-decoded the header and payload — no key needed.", pre: "HEADER\n" + pj(res.header) + "\n\nPAYLOAD\n" + pj(res.payload) + cl, note: res.warnings.join(" "), result: res };
+      }
+      if (res.kind === "hashid") {
+        const lines = res.candidates.map((c) => "  " + c.algo.padEnd(26) + Math.round(c.confidence * 100) + "%");
+        return { title: "Hash identification", body: "Most likely algorithm for that " + res.input.length + "-character value:", pre: lines.join("\n"), note: "Fixed-length digests are ambiguous, so these are ranked by how common each is at this length. This reads length/format only; it does not reverse the hash.", result: res };
+      }
+      if (res.kind === "encode") return { title: "Encoding", body: "**" + res.op + "**:", pre: String(res.value), note: "Input: " + JSON.stringify(res.payload), result: res };
+      if (res.kind === "encdetect") return { title: "Encoding detection", body: "Likely encodings, most probable first:", pre: res.guesses.map((g) => "  " + g.enc.padEnd(26) + Math.round(g.confidence * 100) + "%").join("\n"), note: "Formats overlap (hex is also valid base64, etc.), so these are ranked guesses, not certainties.", result: res };
+      if (res.kind === "ioc") {
+        const order = ["ipv4", "ipv6", "domains", "urls", "emails", "md5", "sha1", "sha256", "cve"];
+        const labels = { ipv4: "IPv4", ipv6: "IPv6", domains: "Domains", urls: "URLs", emails: "Emails", md5: "MD5", sha1: "SHA-1", sha256: "SHA-256", cve: "CVEs" };
+        const blocks = order.filter((k) => res.groups[k] && res.groups[k].length).map((k) => labels[k] + " (" + res.groups[k].length + "):\n" + res.groups[k].map((v) => "  " + (res.defanged ? SA.defang(v) : v)).join("\n"));
+        return { title: "IOC extraction", body: "Found **" + res.total + "** indicator" + (res.total === 1 ? "" : "s") + (res.defanged ? " (defanged)" : "") + ":", pre: blocks.join("\n\n"), note: "De-duplicated by type. Add the word “defang” to neutralize them for safe sharing.", result: res };
+      }
+      if (res.kind === "mac") return { title: "MAC address", body: "Normalized, with what the address itself tells you:", pre: "colon   " + res.colon + "\nhyphen  " + res.hyphen + "\ncisco   " + res.cisco + "\nOUI     " + res.oui + "\nadmin   " + (res.local ? "locally administered (not a real vendor OUI)" : "globally unique (vendor-assigned OUI)") + "\ncast    " + (res.multicast ? "multicast" : "unicast"), result: res };
+      return { title: "Security analysis", body: "Done.", result: res };
+    }
     default: return { title: "Engine", body: "I am not sure what to do with that.", result: null };
   }
 }
@@ -480,6 +517,7 @@ function run(skill, input, model) {
     case "facts": return F.facts(input);
     case "listops": return listOps(input);
     case "spelling": return spelling(input, model);
+    case "secanalyze": return SA.analyze(input);
     case "encode": {
       const eops = [["unbase64", /(?:decode\s+(?:this\s+)?(?:from\s+)?base64|from\s+base64|unbase64|base64\s+decode)/], ["base64", /base64/], ["unhex", /(?:from\s+hex|decode\s+hex|unhex)/], ["hex", /hex/], ["unurl", /url\s*decode|decode\s+url|unurl/], ["url", /url/], ["rot13", /rot13/], ["unbinary", /from\s+binary|decode\s+binary/], ["binary", /binary/], ["morse", /morse/], ["crc32", /crc32/], ["fnv1a", /fnv1a?/], ["djb2", /djb2/]];
       let eop = "base64"; for (const [name, re] of eops) if (re.test(low)) { eop = name; break; }
@@ -632,7 +670,7 @@ function classifyBuild(low) {
 // A word-level read of an unmatched request: which words the engine actually
 // recognizes (so it can say what it understood rather than only what it did not).
 function recognizedWords(low) {
-  const known = { calc: /\b(add|plus|sum|minus|subtract|multiply|divide|square|sqrt|percent|factorial)\b/, convert: /\b(convert|kilometers?|km|kg|miles?|meters?|celsius|fahrenheit|kilograms?|bytes?|gigabytes?|megabytes?)\b/, text: /\b(reverse|uppercase|lowercase|camelcase|snakecase|kebab|slugify|slug)\b/, code: /\b(function|python|javascript|typescript|rust|golang|recursion)\b/, date: /\b(leap ?year|weekday|calendar|days? between)\b/, regex: /\b(regex|regular expression|pattern)\b/, facts: /\b(capital|element|atomic|periodic|planck|avogadro|speed of light)\b/ };
+  const known = { calc: /\b(add|plus|sum|minus|subtract|multiply|divide|square|sqrt|percent|factorial)\b/, convert: /\b(convert|kilometers?|km|kg|miles?|meters?|celsius|fahrenheit|kilograms?|bytes?|gigabytes?|megabytes?)\b/, text: /\b(reverse|uppercase|lowercase|camelcase|snakecase|kebab|slugify|slug)\b/, code: /\b(function|python|javascript|typescript|rust|golang|recursion)\b/, date: /\b(leap ?year|weekday|calendar|days? between)\b/, regex: /\b(regex|regular expression|pattern)\b/, facts: /\b(capital|element|atomic|periodic|planck|avogadro|speed of light)\b/, security: /\b(jwt|json web token|hash|md5|sha-?\d|bcrypt|base32|base58|defang|ioc|iocs|indicator|mac address)\b/ };
   const hits = [];
   for (const k in known) if (known[k].test(low)) hits.push(k);
   return hits;
@@ -828,6 +866,9 @@ const FRACTION_DEN = { third: 3, quarter: 4, fourth: 4, fifth: 5, sixth: 6, seve
 const ORDINAL_COUNT = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9 };
 const REPHRASE = [
   [/^(?:what's|whats)\s+(?=[-\d$(.]|(?:a|an|one|half|twice|double|triple)\s)/i, "what is "],
+  // "make each word start uppercase: foo" reads as a codegen plan ("start ...");
+  // it is the text tool's title case. Canonicalize, keeping the payload.
+  [/^(?:make|have|set|put) (?:each|every) word (?:to )?(?:start|begin|starting|beginning)(?:ing)? (?:with )?(?:an? )?(?:upper\s?case|capital)(?:\s+letter)?\s*(?:[:,-]\s*|\s+(?:in|for|of)\s+)?/i, "title case "],
   // "what is the md5 of password" is a hash request, not a definition
   [/^(?:what(?:'s| is)|whats|give me|compute|calculate)\s+(?:the\s+)?(md5|sha-?1|sha-?256|sha-?512|crc32|base64|hex|rot13|morse|fnv1a?|djb2)\s+(?:hash\s+|checksum\s+|encoding\s+|digest\s+)?(?:of|for)\s+(.+)$/i, (m, alg, rest) => alg.toLowerCase().replace(/^sha-/, "sha") + " of " + rest],
   [new RegExp("^(?:how much is |how many is |what is |how many are )?(" + NUM + "|a|one|half a) dozen\\s*\\??$", "i"), (m, k) => (/^half/i.test(k) ? "0.5" : /^(?:a|one)$/i.test(k) ? "1" : k) + " * 12"],
@@ -1078,7 +1119,9 @@ const DICT_FORMS = [
   ["ant", new RegExp("^(?:what(?:'s| is| are)? )?(?:the |an? )?(?:antonyms?|opposites?) (?:of |for |to )?(?:the word )?\"?" + W + "\"?\\s*\\??$", "i")],
   ["def", new RegExp("^(?:what does|what do|whats|what's) (?:the word |the term )?\"?" + W + "\"? (?:mean|means|stand for)\\s*\\??$", "i")],
   ["def", new RegExp("^(?:what(?:'s| is) )?(?:the )?(?:meaning|definition|meanings|definitions) of (?:the word |the term )?\"?" + W + "\"?\\s*\\??$", "i")],
-  ["def", new RegExp("^(?:define|definition|dictionary|look up|lookup) (?:the word |the term )?\"?" + W + "\"?\\s*\\??$", "i")],
+  ["def", new RegExp("^(?:define|definition|dictionary|look up|lookup) (?:the word |the term )?\"?" + W + "\"?(?:\\s+for me)?\\s*\\??$", "i")],
+  // "tell me what a platypus is", "what a widget is" — the subject sits before a trailing "is/means"
+  ["def", new RegExp("^(?:tell me |i want to know |do you know |can you tell me )?what(?:'s| is)? (?:an? |the )?\"?" + W + "\"? (?:is|are|means?|stands? for)\\s*\\??$", "i")],
   ["def", new RegExp("^(?:what is|what's|whats) (?:an? )?\"?" + W + "\"?\\s*\\??$", "i")], // only reached through the glossary fallback
 ];
 function dictionaryAsk(s) {
@@ -1181,8 +1224,10 @@ const CMP_RE = new RegExp("^(?:which(?:\\s+one)?\\s+is|what(?:'s| is)|is)\\s+(?:
 const CMP_RE2 = new RegExp("^" + NUMRE + "\\s+(?:vs\\.?|versus|or|compared to)\\s+" + NUMRE + "\\s*\\??$", "i");
 const CMP_RE3 = new RegExp("^is\\s+" + NUMRE + "\\s+or\\s+" + NUMRE + "\\s+" + CMP_WORDS + "\\s*\\??$", "i"); // "is 50% or 0.4 bigger"
 const CMP_RE4 = new RegExp("^compare\\s+" + NUMRE + "\\s+(?:and|to|with|vs\\.?|versus|against)\\s+" + NUMRE + "\\s*\\??$", "i"); // "compare 0.3 and 1/3"
+const CMP_RE5 = new RegExp("^(?:is\\s+|are\\s+)?" + NUMRE + "\\s+" + CMP_WORDS + "\\s+than\\s+" + NUMRE + "\\s*\\??$", "i"); // "is 3/4 greater than 2/3" — comparator in the middle
 function compareAsk(s) {
   const t = String(s || "").trim();
+  const m5 = t.match(CMP_RE5); if (m5) return { dir: /small|less|lower|tini/i.test(m5[2]) ? "smaller" : "bigger", a: m5[1], b: m5[3] };
   const m4 = t.match(CMP_RE4); if (m4) return { dir: "bigger", a: m4[1], b: m4[2] };
   const m = t.match(CMP_RE); if (m) return { dir: /small|less|lower|tini/i.test(m[1]) ? "smaller" : "bigger", a: m[2], b: m[3] };
   const m3 = t.match(CMP_RE3); if (m3) return { dir: /small|less|lower|tini/i.test(m3[3]) ? "smaller" : "bigger", a: m3[1], b: m3[2] };
@@ -1287,7 +1332,7 @@ function sayKnow(res) {
   return { title: "Knowledge", body: "I do not have that in my curated knowledge.", result: res };
 }
 const cap1 = (x) => x.charAt(0).toUpperCase() + x.slice(1);
-const SUMMARIZE_ASK = /^\s*(?:please\s+)?(?:summari[sz]e|sum up|tl;?dr|give me (?:a |the )?(?:summary|gist|tl;?dr) of|make (?:this|it) shorter|shorten)(?:\s+(?:this|that|the following|this text|the text|this paragraph|this article|it))?\s*[:\-—]?\s*([\s\S]*)$/i;
+const SUMMARIZE_ASK = /^\s*(?:please\s+)?(?:summari[sz]e|sum up|tl;?dr|give me (?:a |the )?(?:summary|gist|tl;?dr) of|the gist of|make (?:this|it) shorter|shorten|condense|boil(?:\s+(?:this|that|it|the following|the text))?\s+down)(?:\s+(?:this|that|the following|this text|the text|this paragraph|this article|it))?\s*[:\-—]?\s*([\s\S]*)$/i;
 function summarizeReply(raw) {
   const m = raw.match(SUMMARIZE_ASK);
   if (!m) return null;
@@ -1396,7 +1441,7 @@ export function respond(input, model) {
     }
     // 2) Otherwise: say which words it did recognize, then ask to disambiguate.
     const hits = recognizedWords(low);
-    const nameMap = { calc: "**calculate**", convert: "**convert**", text: "**transform text**", code: "**generate code**", date: "**date math**", regex: "**build a regex**", facts: "**look up a fact**" };
+    const nameMap = { calc: "**calculate**", convert: "**convert**", text: "**transform text**", code: "**generate code**", date: "**date math**", regex: "**build a regex**", facts: "**look up a fact**", security: "**analyze a token/hash/IOC**" };
     const recognized = hits.length ? "I recognized words pointing at: " + hits.map((h) => nameMap[h]).join(", ") + ". Say which one and I will run it exactly.\n\n" : "";
     // Only offer a continuation when the text really reads like an unfinished sentence.
     const words = s.split(/\s+/).length;
@@ -1423,7 +1468,7 @@ export function respond(input, model) {
   // skills that transform the user's own content get it verbatim (only command
   // words corrected); CSV data is never touched; everything else reads the fixed text.
   const VERBATIM = new Set(["listops", "text", "encode", "regex", "jsonquery", "setops", "matrix", "logic", "color"]);
-  const useRaw = top.skill === "data" || top.skill === "spelling"; // a spelling question is about the user's exact letters
+  const useRaw = top.skill === "data" || top.skill === "spelling" || top.skill === "secanalyze"; // these read the user's exact bytes (a token, a hash, a log) — never typo-"corrected"
   const inputFor = useRaw ? raw : VERBATIM.has(top.skill) ? fx.hybrid : s;
   const applied = useRaw ? [] : VERBATIM.has(top.skill) ? fx.hybridFixes : fx.fixes;
   const res = run(top.skill, inputFor, model);
